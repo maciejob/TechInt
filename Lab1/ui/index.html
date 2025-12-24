@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>Lab1 - Wypożyczalnia</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 0 10px; }
+    h2 { margin-top: 28px; }
+    input, button { padding: 6px; margin: 4px 0; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    .card { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+    .err { color: #b00020; }
+    .ok { color: #0a7a0a; }
+    small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Lab1 — Wypożyczalnia książek</h1>
+  <small>UI: http://localhost:8080 • API: http://localhost:8000/api</small>
+
+  <div id="msg"></div>
+
+  <h2>Członkowie</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div>Imię</div>
+        <input id="m_name" placeholder="Jan Kowalski" />
+      </div>
+      <div>
+        <div>Email (unikalny)</div>
+        <input id="m_email" placeholder="jan@ex.com" />
+      </div>
+      <button onclick="addMember()">Dodaj członka</button>
+    </div>
+  </div>
+  <div id="members"></div>
+
+  <h2>Książki</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div>Tytuł</div>
+        <input id="b_title" placeholder="Wiedźmin" />
+      </div>
+      <div>
+        <div>Autor</div>
+        <input id="b_author" placeholder="Sapkowski" />
+      </div>
+      <div>
+        <div>Egzemplarze</div>
+        <input id="b_copies" type="number" min="0" value="1" />
+      </div>
+      <button onclick="addBook()">Dodaj książkę</button>
+    </div>
+  </div>
+  <div id="books"></div>
+
+  <h2>Wypożyczenia</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div>Member ID</div>
+        <input id="l_member" type="number" min="1" />
+      </div>
+      <div>
+        <div>Book ID</div>
+        <input id="l_book" type="number" min="1" />
+      </div>
+      <div>
+        <div>Dni (domyślnie 14)</div>
+        <input id="l_days" type="number" min="1" value="14" />
+      </div>
+      <button onclick="borrow()">Wypożycz</button>
+    </div>
+    <small>Najprościej: z listy członków i książek przepisz ID.</small>
+  </div>
+  <div id="loans"></div>
+
+<script>
+  const API = "http://localhost:8000/api";
+
+  function showMsg(text, ok=true){
+    const el = document.getElementById("msg");
+    el.className = ok ? "ok" : "err";
+    el.textContent = text;
+    if(text) setTimeout(()=>{ el.textContent=""; }, 3000);
+  }
+
+  async function jget(path){
+    const r = await fetch(API + path);
+    return { status: r.status, data: await r.json() };
+  }
+  async function jpost(path, body){
+    const r = await fetch(API + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    let data = null;
+    try { data = await r.json(); } catch(e) {}
+    return { status: r.status, data };
+  }
+
+  async function refreshAll(){
+    await refreshMembers();
+    await refreshBooks();
+    await refreshLoans();
+  }
+
+  async function refreshMembers(){
+    const {data} = await jget("/members");
+    let html = "<table><tr><th>ID</th><th>Imię</th><th>Email</th></tr>";
+    for(const m of data){
+      html += `<tr><td>${m.id}</td><td>${m.name}</td><td>${m.email}</td></tr>`;
+    }
+    html += "</table>";
+    document.getElementById("members").innerHTML = html;
+  }
+
+  async function refreshBooks(){
+    const {data} = await jget("/books");
+    let html = "<table><tr><th>ID</th><th>Tytuł</th><th>Autor</th><th>Copies</th><th>Available</th><th>Akcja</th></tr>";
+    for(const b of data){
+      const disabled = (b.available <= 0) ? "disabled" : "";
+      html += `<tr>
+        <td>${b.id}</td><td>${b.title}</td><td>${b.author}</td>
+        <td>${b.copies}</td><td>${b.available}</td>
+        <td>
+          <button ${disabled} onclick="quickBorrow(${b.id})">Wypożycz</button>
+        </td>
+      </tr>`;
+    }
+    html += "</table>";
+    document.getElementById("books").innerHTML = html;
+  }
+
+  async function refreshLoans(){
+    const {data} = await jget("/loans");
+    let html = "<table><tr><th>ID</th><th>Czytelnik</th><th>Książka</th><th>Loan</th><th>Due</th><th>Return</th><th>Akcja</th></tr>";
+    for(const l of data){
+      const active = (l.return_date === null);
+      const btn = active ? `<button onclick="returnLoan(${l.id})">Zwrot</button>` : "";
+      html += `<tr>
+        <td>${l.id}</td>
+        <td>${l.member_name} (#${l.member_id})</td>
+        <td>${l.book_title} (#${l.book_id})</td>
+        <td>${l.loan_date}</td>
+        <td>${l.due_date}</td>
+        <td>${l.return_date ?? ""}</td>
+        <td>${btn}</td>
+      </tr>`;
+    }
+    html += "</table>";
+    document.getElementById("loans").innerHTML = html;
+  }
+
+  async function addMember(){
+    const name = document.getElementById("m_name").value.trim();
+    const email = document.getElementById("m_email").value.trim();
+    const r = await jpost("/members", {name, email});
+    if(r.status === 201){
+      showMsg("Dodano członka ✔");
+      document.getElementById("m_name").value="";
+      document.getElementById("m_email").value="";
+      await refreshMembers();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function addBook(){
+    const title = document.getElementById("b_title").value.trim();
+    const author = document.getElementById("b_author").value.trim();
+    const copies = parseInt(document.getElementById("b_copies").value || "1", 10);
+    const r = await jpost("/books", {title, author, copies});
+    if(r.status === 201){
+      showMsg("Dodano książkę ✔");
+      document.getElementById("b_title").value="";
+      document.getElementById("b_author").value="";
+      document.getElementById("b_copies").value="1";
+      await refreshBooks();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function borrow(){
+    const member_id = parseInt(document.getElementById("l_member").value, 10);
+    const book_id = parseInt(document.getElementById("l_book").value, 10);
+    const days = parseInt(document.getElementById("l_days").value || "14", 10);
+    const r = await jpost("/loans/borrow", {member_id, book_id, days});
+    if(r.status === 201){
+      showMsg("Wypożyczono ✔");
+      await refreshBooks();
+      await refreshLoans();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function quickBorrow(book_id){
+    const member_id = parseInt(prompt("Podaj member_id:"), 10);
+    if(!member_id) return;
+    const r = await jpost("/loans/borrow", {member_id, book_id, days: 14});
+    if(r.status === 201){
+      showMsg("Wypożyczono ✔");
+      await refreshBooks();
+      await refreshLoans();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function returnLoan(loan_id){
+    const r = await jpost("/loans/return", {loan_id});
+    if(r.status === 200){
+      showMsg("Zwrócono ✔");
+      await refreshBooks();
+      await refreshLoans();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  refreshAll();
+</script>
+</body>
+</html>
