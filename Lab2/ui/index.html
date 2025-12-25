@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>Lab2 - Sklep</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 0 10px; }
+    h2 { margin-top: 28px; }
+    input, button { padding: 6px; margin: 4px 0; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    .card { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+    .err { color: #b00020; }
+    .ok { color: #0a7a0a; }
+    small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Lab2 — Sklep: koszyk i zamówienia</h1>
+  <small>UI: http://localhost:8081 • API: http://localhost:8001/api</small>
+  <div id="msg"></div>
+
+  <h2>Produkty</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div>Nazwa</div>
+        <input id="p_name" placeholder="Chleb" />
+      </div>
+      <div>
+        <div>Cena (>=0)</div>
+        <input id="p_price" type="number" min="0" step="0.01" value="0" />
+      </div>
+      <button onclick="addProduct()">Dodaj produkt</button>
+    </div>
+  </div>
+  <div id="products"></div>
+
+  <h2>Koszyk</h2>
+  <div id="cart"></div>
+
+  <div class="card">
+    <button onclick="checkout()">Zamów</button>
+  </div>
+
+<script>
+  const API = "http://localhost:8001/api";
+
+  function showMsg(text, ok=true){
+    const el = document.getElementById("msg");
+    el.className = ok ? "ok" : "err";
+    el.textContent = text;
+    if(text) setTimeout(()=>{ el.textContent=""; }, 3500);
+  }
+
+  async function jget(path){
+    const r = await fetch(API + path);
+    return { status: r.status, data: await r.json() };
+  }
+  async function jpost(path, body){
+    const r = await fetch(API + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    let data = null;
+    try { data = await r.json(); } catch(e) {}
+    return { status: r.status, data };
+  }
+  async function jpatch(path, body){
+    const r = await fetch(API + path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    let data = null;
+    try { data = await r.json(); } catch(e) {}
+    return { status: r.status, data };
+  }
+  async function jdel(path){
+    const r = await fetch(API + path, { method: "DELETE" });
+    let data = null;
+    try { data = await r.json(); } catch(e) {}
+    return { status: r.status, data };
+  }
+
+  async function refreshAll(){
+    await refreshProducts();
+    await refreshCart();
+  }
+
+  async function refreshProducts(){
+    const {data} = await jget("/products");
+    let html = "<table><tr><th>ID</th><th>Nazwa</th><th>Cena</th><th>Akcja</th></tr>";
+    for(const p of data){
+      html += `<tr>
+        <td>${p.id}</td>
+        <td>${p.name}</td>
+        <td>${Number(p.price).toFixed(2)}</td>
+        <td><button onclick="addToCart(${p.id})">Dodaj do koszyka</button></td>
+      </tr>`;
+    }
+    html += "</table>";
+    document.getElementById("products").innerHTML = html;
+  }
+
+  async function refreshCart(){
+    const {data} = await jget("/cart");
+    const items = data.items || [];
+    let html = "<table><tr><th>Produkt</th><th>Cena</th><th>Ilość</th><th>Suma</th><th>Akcja</th></tr>";
+    for(const it of items){
+      html += `<tr>
+        <td>${it.name} (#${it.product_id})</td>
+        <td>${Number(it.price).toFixed(2)}</td>
+        <td>
+          <input type="number" min="1" value="${it.qty}"
+            onchange="setQty(${it.product_id}, this.value)" style="width:80px" />
+        </td>
+        <td>${Number(it.line_total).toFixed(2)}</td>
+        <td><button onclick="removeItem(${it.product_id})">Usuń</button></td>
+      </tr>`;
+    }
+    html += `</table><div><b>Total:</b> ${Number(data.total || 0).toFixed(2)}</div>`;
+    document.getElementById("cart").innerHTML = html;
+  }
+
+  async function addProduct(){
+    const name = document.getElementById("p_name").value.trim();
+    const price = Number(document.getElementById("p_price").value);
+    const r = await jpost("/products", {name, price});
+    if(r.status === 201){
+      showMsg("Dodano produkt ✔");
+      document.getElementById("p_name").value = "";
+      document.getElementById("p_price").value = "0";
+      await refreshProducts();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function addToCart(product_id){
+    const r = await jpost("/cart/add", {product_id, qty: 1});
+    if(r.status === 200){
+      await refreshCart();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function setQty(product_id, qtyVal){
+    const qty = Number(qtyVal);
+    if(!Number.isInteger(qty) || qty < 1){
+      showMsg("qty musi być >= 1", false);
+      await refreshCart();
+      return;
+    }
+    const r = await jpatch("/cart/item", {product_id, qty});
+    if(r.status === 200){
+      await refreshCart();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function removeItem(product_id){
+    const r = await jdel(`/cart/item/${product_id}`);
+    if(r.status === 200){
+      await refreshCart();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function checkout(){
+    const r = await jpost("/checkout", {});
+    if(r.status === 201){
+      showMsg(`Zamówienie utworzone ✔ order_id=${r.data.order_id}, total=${Number(r.data.total).toFixed(2)}`);
+      await refreshCart(); // koszyk ma być pusty
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  refreshAll();
+</script>
+</body>
+</html>
