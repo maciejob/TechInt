@@ -1,0 +1,14 @@
+services:
+  api:
+    build: ./api
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./db:/data
+
+  ui:
+    image: nginx:alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro

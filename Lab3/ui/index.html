@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>Lab3 – Blog</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 0 10px; }
+    h2 { margin-top: 28px; }
+    input, textarea, button { padding: 6px; margin: 4px 0; width: 100%; }
+    textarea { min-height: 80px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+    .ok { color: #0a7a0a; }
+    .err { color: #b00020; }
+  </style>
+</head>
+<body>
+<h1>Lab3 — Blog z komentarzami</h1>
+<small>UI: http://localhost:8082 • API: http://localhost:8002/api</small>
+<div id="msg"></div>
+
+<h2>Nowy post</h2>
+<div class="card">
+  <input id="p_title" placeholder="Tytuł" />
+  <textarea id="p_body" placeholder="Treść posta"></textarea>
+  <button onclick="addPost()">Dodaj post</button>
+</div>
+
+<h2>Posty</h2>
+<div id="posts"></div>
+
+<h2>Panel moderatora</h2>
+<div id="pending"></div>
+
+<script>
+const API = "http://localhost:8002/api";
+
+function showMsg(t, ok=true){
+  const m = document.getElementById("msg");
+  m.className = ok ? "ok" : "err";
+  m.textContent = t;
+  if(t) setTimeout(()=>m.textContent="", 3000);
+}
+
+async function jget(p){ const r=await fetch(API+p); return r.json(); }
+async function jpost(p,b){
+  const r=await fetch(API+p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+  let d=null; try{d=await r.json();}catch(e){}
+  return {status:r.status,data:d};
+}
+
+async function addPost(){
+  const title=document.getElementById("p_title").value.trim();
+  const body=document.getElementById("p_body").value.trim();
+  const r=await jpost("/posts",{title,body});
+  if(r.status===201){
+    document.getElementById("p_title").value="";
+    document.getElementById("p_body").value="";
+    showMsg("Dodano post ✔");
+    refresh();
+  } else showMsg("Błąd",false);
+}
+
+async function addComment(post_id){
+  const author=prompt("Autor:");
+  const body=prompt("Komentarz:");
+  if(!author||!body) return;
+  const r=await jpost(`/posts/${post_id}/comments`,{author,body});
+  if(r.status===201){
+    showMsg("Komentarz dodany (czeka na moderację)");
+    refresh();
+  } else showMsg("Błąd",false);
+}
+
+async function approve(id){
+  const r=await jpost(`/comments/${id}/approve`,{});
+  if(r.status===200){
+    showMsg("Zatwierdzono ✔");
+    refresh();
+  } else showMsg("Błąd",false);
+}
+
+async function refresh(){
+  const posts=await jget("/posts");
+  let html="";
+  for(const p of posts){
+    const comments=await jget(`/posts/${p.id}/comments`);
+    html+=`<div class="card">
+      <h3>${p.title}</h3>
+      <p>${p.body}</p>
+      <button onclick="addComment(${p.id})">Dodaj komentarz</button>
+      <ul>${comments.map(c=>`<li><b>${c.author}</b>: ${c.body}</li>`).join("")}</ul>
+    </div>`;
+  }
+  document.getElementById("posts").innerHTML=html;
+
+  const pend=await jget("/moderation/pending");
+  let ph="<table><tr><th>ID</th><th>Post</th><th>Autor</th><th>Treść</th><th></th></tr>";
+  for(const c of pend){
+    ph+=`<tr>
+      <td>${c.id}</td><td>${c.post_id}</td><td>${c.author}</td><td>${c.body}</td>
+      <td><button onclick="approve(${c.id})">Zatwierdź</button></td>
+    </tr>`;
+  }
+  ph+="</table>";
+  document.getElementById("pending").innerHTML=ph;
+}
+
+refresh();
+</script>
+</body>
+</html>
