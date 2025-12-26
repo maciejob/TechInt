@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>Lab4 – Filmy i oceny</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 0 10px; }
+    h2 { margin-top: 28px; }
+    input, button { padding: 6px; margin: 4px 0; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    .card { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+    .ok { color: #0a7a0a; }
+    .err { color: #b00020; }
+    small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Lab4 — Filmy i oceny</h1>
+  <small>UI: http://localhost:8083 • API: http://localhost:8003/api</small>
+  <div id="msg"></div>
+
+  <h2>Dodaj film</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div>Tytuł</div>
+        <input id="m_title" placeholder="Matrix" />
+      </div>
+      <div>
+        <div>Rok</div>
+        <input id="m_year" type="number" value="1999" />
+      </div>
+      <button onclick="addMovie()">Dodaj</button>
+    </div>
+  </div>
+
+  <h2>Ranking</h2>
+  <div id="movies"></div>
+
+  <h2>Dodaj ocenę</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <div>Movie ID</div>
+        <input id="r_movie" type="number" min="1" />
+      </div>
+      <div>
+        <div>Score (1..5)</div>
+        <input id="r_score" type="number" min="1" max="5" value="5" />
+      </div>
+      <button onclick="addRating()">Oceń</button>
+    </div>
+    <small>Najprościej: przepisz ID z tabeli. Kliknięcie „+5” ocenia od razu.</small>
+  </div>
+
+<script>
+  const API = "http://localhost:8003/api";
+
+  function showMsg(t, ok=true){
+    const el=document.getElementById("msg");
+    el.className = ok ? "ok" : "err";
+    el.textContent = t;
+    if(t) setTimeout(()=>el.textContent="", 3500);
+  }
+
+  async function jget(path){
+    const r=await fetch(API+path);
+    return {status:r.status, data: await r.json()};
+  }
+  async function jpost(path, body){
+    const r=await fetch(API+path,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    let d=null; try{ d=await r.json(); } catch(e){}
+    return {status:r.status, data:d};
+  }
+
+  async function refreshMovies(){
+    const {data} = await jget("/movies");
+    let html = "<table><tr><th>#</th><th>Tytuł</th><th>Rok</th><th>Avg</th><th>Votes</th><th>Akcja</th></tr>";
+    for(const m of data){
+      html += `<tr>
+        <td>${m.id}</td>
+        <td>${m.title}</td>
+        <td>${m.year}</td>
+        <td>${Number(m.avg_score).toFixed(2)}</td>
+        <td>${m.votes}</td>
+        <td><button onclick="quick5(${m.id})">+5</button></td>
+      </tr>`;
+    }
+    html += "</table>";
+    document.getElementById("movies").innerHTML = html;
+  }
+
+  async function addMovie(){
+    const title = document.getElementById("m_title").value.trim();
+    const year = Number(document.getElementById("m_year").value);
+    const r = await jpost("/movies", {title, year});
+    if(r.status === 201){
+      showMsg("Dodano film ✔");
+      document.getElementById("m_title").value="";
+      await refreshMovies();
+    } else {
+      showMsg("Błąd dodawania filmu", false);
+    }
+  }
+
+  async function addRating(){
+    const movie_id = Number(document.getElementById("r_movie").value);
+    const score = Number(document.getElementById("r_score").value);
+    const r = await jpost("/ratings", {movie_id, score});
+    if(r.status === 201){
+      showMsg("Dodano ocenę ✔");
+      await refreshMovies();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  async function quick5(movie_id){
+    const r = await jpost("/ratings", {movie_id, score: 5});
+    if(r.status === 201){
+      await refreshMovies();
+    } else {
+      showMsg((r.data && r.data.detail) ? r.data.detail : "Błąd", false);
+    }
+  }
+
+  refreshMovies();
+</script>
+</body>
+</html>
