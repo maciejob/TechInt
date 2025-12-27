@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<title>Lab5 – Kanban</title>
+<style>
+body { font-family: sans-serif; margin: 20px; }
+.board { display: flex; gap: 16px; }
+.col { border: 1px solid #ccc; padding: 10px; width: 30%; }
+.card { border: 1px solid #ddd; padding: 6px; margin: 6px 0; }
+button { margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>Lab5 — Kanban</h1>
+<small>UI: http://localhost:8084 • API: http://localhost:8004/api</small>
+
+<h3>Nowe zadanie</h3>
+<input id="title" placeholder="Tytuł zadania"/>
+<button onclick="add()">Dodaj do Todo</button>
+
+<div class="board" id="board"></div>
+
+<script>
+const API = "http://localhost:8004/api";
+
+async function jget(p){ return (await fetch(API+p)).json(); }
+async function jpost(p,b){
+  return fetch(API+p,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(b)
+  });
+}
+
+async function add(){
+  const title=document.getElementById("title").value.trim();
+  if(!title) return;
+  await jpost("/tasks",{title, col_id:1});
+  document.getElementById("title").value="";
+  render();
+}
+
+async function move(task, col){
+  await jpost(`/tasks/${task.id}/move`,{col_id:col, ord:1});
+  render();
+}
+
+async function render(){
+  const data = await jget("/board");
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+
+  for(const c of data.cols){
+    const div = document.createElement("div");
+    div.className = "col";
+    div.innerHTML = `<h3>${c.name}</h3>`;
+
+    data.tasks
+      .filter(t => t.col_id === c.id)
+      .sort((a,b)=>a.ord-b.ord)
+      .forEach(t=>{
+        const d=document.createElement("div");
+        d.className="card";
+        d.innerHTML = `<b>${t.title}</b>`;
+        if(c.name!=="Done"){
+          d.innerHTML += `<br/><button>→</button>`;
+          d.querySelector("button").onclick=()=>move(t,c.id+1);
+        }
+        div.appendChild(d);
+      });
+
+    board.appendChild(div);
+  }
+}
+
+render();
+</script>
+</body>
+</html>
