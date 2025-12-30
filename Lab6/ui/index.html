@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<title>Lab6 – Notatki</title>
+<style>
+body { font-family: sans-serif; max-width: 900px; margin: 20px auto; }
+input, textarea, button { width: 100%; margin: 6px 0; padding: 6px; }
+textarea { min-height: 80px; }
+.card { border: 1px solid #ddd; padding: 10px; margin: 10px 0; }
+small { color: #666; }
+</style>
+</head>
+<body>
+<h1>Lab6 — Notatki</h1>
+<small>UI: http://localhost:8085 • API: http://localhost:8005/api</small>
+
+<h3>Nowa notatka</h3>
+<input id="title" placeholder="Tytuł"/>
+<textarea id="body" placeholder="Treść"></textarea>
+<input id="tags" placeholder="Tagi (np. work,home,school)"/>
+<button onclick="add()">Dodaj</button>
+
+<h3>Szukaj</h3>
+<input id="q" placeholder="Szukaj..." oninput="render()"/>
+
+<div id="notes"></div>
+
+<script>
+const API = "http://localhost:8005/api";
+
+async function jget(p){ return (await fetch(API+p)).json(); }
+async function jpost(p,b){
+  return fetch(API+p,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(b)
+  }).then(r=>r.json());
+}
+
+async function add(){
+  const title=titleEl.value.trim();
+  const body=bodyEl.value.trim();
+  if(!title||!body) return;
+
+  const note = await jpost("/notes",{title,body});
+  const tags = tagsEl.value.split(",").map(t=>t.trim()).filter(Boolean);
+  if(tags.length){
+    await jpost(`/notes/${note.id}/tags`,{tags});
+  }
+
+  titleEl.value=""; bodyEl.value=""; tagsEl.value="";
+  render();
+}
+
+async function render(){
+  const q = qEl.value.trim();
+  const notes = await jget("/notes"+(q?`?q=${encodeURIComponent(q)}`:""));
+  notesDiv.innerHTML = "";
+  for(const n of notes){
+    const d=document.createElement("div");
+    d.className="card";
+    d.innerHTML = `<b>${n.title}</b>
+      <p>${n.body.slice(0,120)}</p>
+      <small>${n.created_at}</small>`;
+    notesDiv.appendChild(d);
+  }
+}
+
+const titleEl=title, bodyEl=body, tagsEl=tags, qEl=q, notesDiv=notes;
+render();
+</script>
+</body>
+</html>
